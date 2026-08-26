@@ -35,7 +35,7 @@ class WebViewPage extends StatefulWidget {
 class _WebViewPageState extends State<WebViewPage> {
   late final WebViewController controller;
   bool isLoading = true;
-  bool _isRedirecting = false;
+
   @override
   void initState() {
     super.initState();
@@ -54,30 +54,25 @@ class _WebViewPageState extends State<WebViewPage> {
 
             return NavigationDecision.navigate;
           },
+          onPageStarted: (url) {
+            _hideFooter();
+          },
+          onProgress: (progress) {
+            if (progress > 10) {
+              _hideFooter();
+            }
+          },
           onPageFinished: (url) async {
+            _hideFooter();
             if (mounted) {
               setState(() {
                 isLoading = false;
               });
             }
-            if (url.contains('/login')) {
+            if (url.contains('/login') || _isPublicWebsiteUrl(url)) {
               await _clearLastUrl();
-            } else if (!_isPublicWebsiteUrl(url)) {
+            } else {
               await _saveLastUrl(url);
-            } else if (_isPublicWebsiteUrl(url) && !_isRedirecting) {
-              _isRedirecting = true;
-              final prefs = await SharedPreferences.getInstance();
-              final savedUrl = prefs.getString('last_url');
-              final target =
-                  (savedUrl != null &&
-                      savedUrl.isNotEmpty &&
-                      !_isPublicWebsiteUrl(savedUrl))
-                  ? savedUrl
-                  : 'https://nutflix-frontend.vercel.app/';
-              controller.loadRequest(Uri.parse(target));
-              Future.delayed(const Duration(seconds: 2), () {
-                _isRedirecting = false;
-              });
             }
           },
           onWebResourceError: (error) {
@@ -216,6 +211,20 @@ class _WebViewPageState extends State<WebViewPage> {
       return true;
     }
     return false;
+  }
+
+  void _hideFooter() {
+    controller.runJavaScript('''
+      (function() {
+        const styleId = 'hide-app-footer-style';
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.innerHTML = 'footer, .mobile-footer-nav, [class*="footer"], [class*="Footer"] { display: none !important; }';
+          (document.head || document.documentElement).appendChild(style);
+        }
+      })();
+    ''');
   }
 
   @override
