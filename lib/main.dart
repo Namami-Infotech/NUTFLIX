@@ -227,13 +227,47 @@ class _WebViewPageState extends State<WebViewPage> {
   void _hideFooter() {
     controller.runJavaScript('''
       (function() {
+        // Disable viewport zoom & pinch zoom
+        let meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) {
+          meta = document.createElement('meta');
+          meta.name = 'viewport';
+          (document.head || document.documentElement).appendChild(meta);
+        }
+        meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no');
+
+        // Prevent pinch zoom and double tap zoom events
+        const zoomHandlerId = 'disable-zoom-handler';
+        if (!window[zoomHandlerId]) {
+          window[zoomHandlerId] = true;
+          document.addEventListener('touchstart', function(e) {
+            if (e.touches && e.touches.length > 1) {
+              e.preventDefault();
+            }
+          }, { passive: false });
+
+          let lastTouchEnd = 0;
+          document.addEventListener('touchend', function(e) {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+              e.preventDefault();
+            }
+            lastTouchEnd = now;
+          }, false);
+
+          document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+          });
+        }
+
         const styleId = 'hide-app-footer-style';
-        if (!document.getElementById(styleId)) {
-          const style = document.createElement('style');
+        let style = document.getElementById(styleId);
+        if (!style) {
+          style = document.createElement('style');
           style.id = styleId;
-          style.innerHTML = 'footer, .mobile-footer-nav, [class*="footer"], [class*="Footer"] { display: none !important; }';
           (document.head || document.documentElement).appendChild(style);
         }
+        style.innerHTML = 'html, body { touch-action: manipulation !important; -webkit-user-select: none; } footer, .website-footer, body > footer { display: none !important; } .product-grid-container { grid-template-columns: repeat(2, 1fr) !important; }';
 
         const handlerId = 'external-click-handler';
         if (!window[handlerId]) {
