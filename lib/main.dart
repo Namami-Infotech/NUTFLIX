@@ -15,6 +15,15 @@ import 'package:url_launcher/url_launcher.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+      systemNavigationBarColor: Color(0xFFEEE9E3),
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
   await FlutterDownloader.initialize(debug: true, ignoreSsl: true);
   runApp(const MyApp());
 }
@@ -47,7 +56,9 @@ class _WebViewPageState extends State<WebViewPage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFFEEE9E3))
       ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        Platform.isIOS
+            ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/605.1.15'
+            : 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
       )
       ..addJavaScriptChannel(
         'FlutterShare',
@@ -315,7 +326,7 @@ class _WebViewPageState extends State<WebViewPage> {
           style.id = styleId;
           (document.head || document.documentElement).appendChild(style);
         }
-        style.innerHTML = 'html, body { touch-action: manipulation !important; -webkit-user-select: none; } footer, .website-footer, body > footer { display: none !important; } .product-grid-container { grid-template-columns: repeat(2, 1fr) !important; }';
+        style.innerHTML = 'html, body { touch-action: manipulation !important; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; } footer, .website-footer, body > footer { display: none !important; } .product-grid-container { grid-template-columns: repeat(2, 1fr) !important; }';
 
         // 1. Web Share & CanShare API Polyfill
         const sharePolyfillFn = function(shareData) {
@@ -583,7 +594,10 @@ class _WebViewPageState extends State<WebViewPage> {
         backgroundColor: const Color(0xFFEEE9E3),
         body: Stack(
           children: [
-            SafeArea(child: WebViewWidget(controller: controller)),
+            SafeArea(
+              bottom: false,
+              child: WebViewWidget(controller: controller),
+            ),
             if (isLoading)
               Positioned.fill(
                 child: Container(
