@@ -70,5 +70,13 @@
 	<true/>
 	<key>FDAllFilesDownloadedMessage</key>
 	<string>All files have been downloaded successfully.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+		<string>tel</string>
+		<string>mailto</string>
+		<string>https</string>
+		<string>http</string>
+	</array>
 </dict>
 </plist>
