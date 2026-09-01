@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -46,6 +48,12 @@ class _WebViewPageState extends State<WebViewPage> {
       ..setBackgroundColor(const Color(0xFFEEE9E3))
       ..setUserAgent(
         'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+      )
+      ..addJavaScriptChannel(
+        'FlutterShare',
+        onMessageReceived: (JavaScriptMessage message) {
+          _handleShareMessage(message.message);
+        },
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -224,6 +232,46 @@ class _WebViewPageState extends State<WebViewPage> {
     return false;
   }
 
+  void _handleShareMessage(String messageText) {
+    try {
+      String shareUrl = '';
+      String shareTitle = '';
+      String shareText = '';
+
+      if (messageText.startsWith('{') && messageText.endsWith('}')) {
+        final Map<String, dynamic> data = jsonDecode(messageText);
+        shareUrl = data['url']?.toString() ?? '';
+        shareTitle = data['title']?.toString() ?? '';
+        shareText = data['text']?.toString() ?? '';
+      } else {
+        shareUrl = messageText;
+      }
+
+      if (shareUrl.isEmpty) {
+        controller.currentUrl().then((url) {
+          if (url != null && url.isNotEmpty) {
+            // ignore: deprecated_member_use
+            Share.share(url);
+          }
+        });
+        return;
+      }
+
+      final String finalShareText =
+          (shareText.isNotEmpty && !shareText.contains(shareUrl))
+          ? '$shareText\n$shareUrl'
+          : shareUrl;
+
+      // ignore: deprecated_member_use
+      Share.share(
+        finalShareText,
+        subject: shareTitle.isNotEmpty ? shareTitle : 'Nutflix',
+      );
+    } catch (e) {
+      debugPrint('Error handling share: $e');
+    }
+  }
+
   void _hideFooter() {
     controller.runJavaScript('''
       (function() {
@@ -268,6 +316,88 @@ class _WebViewPageState extends State<WebViewPage> {
           (document.head || document.documentElement).appendChild(style);
         }
         style.innerHTML = 'html, body { touch-action: manipulation !important; -webkit-user-select: none; } footer, .website-footer, body > footer { display: none !important; } .product-grid-container { grid-template-columns: repeat(2, 1fr) !important; }';
+
+        // 1. Web Share & CanShare API Polyfill
+        const sharePolyfillFn = function(shareData) {
+          var url = (shareData && shareData.url) ? shareData.url : window.location.href;
+          var title = (shareData && shareData.title) ? shareData.title : document.title;
+          var text = (shareData && shareData.text) ? shareData.text : '';
+          if (window.FlutterShare) {
+            window.FlutterShare.postMessage(JSON.stringify({
+              url: url,
+              title: title,
+              text: text
+            }));
+          }
+          return Promise.resolve();
+        };
+
+        try {
+          Object.defineProperty(navigator, 'share', {
+            value: sharePolyfillFn,
+            configurable: true,
+            writable: true
+          });
+        } catch(e) {
+          navigator.share = sharePolyfillFn;
+        }
+
+        try {
+          Object.defineProperty(navigator, 'canShare', {
+            value: function() { return true; },
+            configurable: true,
+            writable: true
+          });
+        } catch(e) {
+          navigator.canShare = function() { return true; };
+        }
+
+        // 2. Clipboard writeText Interceptor
+        const clipHandlerId = 'flutter-clip-handler';
+        if (!window[clipHandlerId]) {
+          window[clipHandlerId] = true;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            const origWriteText = navigator.clipboard.writeText.bind(navigator.clipboard);
+            navigator.clipboard.writeText = function(text) {
+              if (text && typeof text === 'string' && (text.startsWith('http://') || text.startsWith('https://'))) {
+                if (window.FlutterShare) {
+                  window.FlutterShare.postMessage(JSON.stringify({
+                    url: text,
+                    title: document.title || 'Nutflix',
+                    text: text
+                  }));
+                }
+              }
+              return origWriteText(text);
+            };
+          }
+        }
+
+        // 3. Robust Click Interceptor for Share Buttons
+        const shareClickHandlerId = 'flutter-share-click-handler';
+        if (!window[shareClickHandlerId]) {
+          window[shareClickHandlerId] = true;
+          document.addEventListener('click', function(e) {
+            let target = e.target;
+            const btn = (target && target.closest)
+              ? target.closest('.product-share-btn, .share-btn, .share-button, [title*="Share" i], [aria-label*="Share" i], [data-action*="Share" i], svg.lucide-share2')
+              : null;
+            if (btn) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              const currentUrl = window.location.href;
+              const pageTitle = document.title || 'Nutflix';
+              if (window.FlutterShare) {
+                window.FlutterShare.postMessage(JSON.stringify({
+                  url: currentUrl,
+                  title: pageTitle,
+                  text: 'Check out ' + pageTitle + ' on Nutflix!'
+                }));
+              }
+            }
+          }, true);
+        }
 
         const handlerId = 'external-click-handler';
         if (!window[handlerId]) {
