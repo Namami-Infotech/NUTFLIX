@@ -12,6 +12,8 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:in_app_update/in_app_update.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,12 +47,13 @@ class WebViewPage extends StatefulWidget {
   State<WebViewPage> createState() => _WebViewPageState();
 }
 
-class _WebViewPageState extends State<WebViewPage> {
+class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
   late final WebViewController controller;
   bool isLoading = true;
   @override
   void initState() {
     super.initState();
+    _initSmsListener();
     controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFFEEE9E3))
@@ -63,6 +66,12 @@ class _WebViewPageState extends State<WebViewPage> {
         'FlutterShare',
         onMessageReceived: (JavaScriptMessage message) {
           _handleShareMessage(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'FlutterOTP',
+        onMessageReceived: (JavaScriptMessage message) {
+          _initSmsListener();
         },
       )
       ..setNavigationDelegate(
@@ -120,6 +129,7 @@ class _WebViewPageState extends State<WebViewPage> {
           .setAllowsBackForwardNavigationGestures(true);
     }
     _loadInitialUrl();
+    _checkForUpdate();
     Future.delayed(const Duration(seconds: 5), () {
       if (mounted && isLoading) {
         setState(() {
@@ -127,6 +137,23 @@ class _WebViewPageState extends State<WebViewPage> {
         });
       }
     });
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final AppUpdateInfo info = await InAppUpdate.checkForUpdate();
+      if (info.updateAvailability == UpdateAvailability.updateAvailable) {
+        if (info.immediateUpdateAllowed) {
+          await InAppUpdate.performImmediateUpdate();
+        } else if (info.flexibleUpdateAllowed) {
+          await InAppUpdate.startFlexibleUpdate();
+          await InAppUpdate.completeFlexibleUpdate();
+        }
+      }
+    } catch (e) {
+      debugPrint("InAppUpdate check error: $e");
+    }
   }
 
   Future<List<String>> _androidFilePicker(FileSelectorParams params) async {
@@ -278,6 +305,47 @@ class _WebViewPageState extends State<WebViewPage> {
     }
   }
 
+  @override
+  void dispose() {
+    SmsAutoFill().unregisterListener();
+    cancel();
+    super.dispose();
+  }
+
+  @override
+  void codeUpdated() {
+    debugPrint("SMS Code received: $code");
+    if (code != null && code!.isNotEmpty) {
+      final extractedOtp = _extractOtp(code!);
+      if (extractedOtp.isNotEmpty) {
+        _fillOtpInWebView(extractedOtp);
+      }
+    }
+  }
+
+  void _initSmsListener() async {
+    try {
+      await SmsAutoFill().listenForCode();
+      listenForCode();
+    } catch (e) {
+      debugPrint("Error listening for SMS OTP: $e");
+    }
+  }
+
+  String _extractOtp(String text) {
+    final match = RegExp(r'\b\d{4,6}\b').firstMatch(text);
+    return match != null ? match.group(0)! : '';
+  }
+
+  void _fillOtpInWebView(String otpCode) {
+    if (otpCode.isEmpty) return;
+    controller.runJavaScript('''
+      if (typeof window.fillOtpCode === 'function') {
+        window.fillOtpCode('$otpCode');
+      }
+    ''');
+  }
+
   void _hideFooter() {
     controller.runJavaScript('''
       (function() {
@@ -426,6 +494,84 @@ class _WebViewPageState extends State<WebViewPage> {
             }
           }, true);
         }
+
+        // 4. OTP AutoFill Helper & DOM Tagging
+        const otpInitId = 'flutter-otp-init-handler';
+        if (!window[otpInitId]) {
+          window[otpInitId] = true;
+
+          window.fillOtpCode = function(otp) {
+            if (!otp) return;
+            const singleInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input[autocomplete="one-time-code"]')).filter(function(el) {
+              const attrs = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.placeholder || '') + ' ' + (el.className || '')).toLowerCase();
+              return attrs.includes('otp') || attrs.includes('code') || attrs.includes('pin') || el.getAttribute('autocomplete') === 'one-time-code';
+            });
+
+            if (singleInputs.length > 0) {
+              const input = singleInputs[0];
+              input.value = otp;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              input.dispatchEvent(new Event('blur', { bubbles: true }));
+              return;
+            }
+
+            const boxInputs = Array.from(document.querySelectorAll('input[maxlength="1"]'));
+            if (boxInputs.length >= otp.length) {
+              for (let i = 0; i < otp.length; i++) {
+                boxInputs[i].value = otp[i];
+                boxInputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                boxInputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                boxInputs[i].dispatchEvent(new Event('blur', { bubbles: true }));
+              }
+              return;
+            }
+
+            const anyInput = document.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
+            if (anyInput) {
+              anyInput.value = otp;
+              anyInput.dispatchEvent(new Event('input', { bubbles: true }));
+              anyInput.dispatchEvent(new Event('change', { bubbles: true }));
+              anyInput.dispatchEvent(new Event('blur', { bubbles: true }));
+            }
+          };
+
+          const setupOtpInputs = function() {
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(function(input) {
+              const attrs = ((input.name || '') + ' ' + (input.id || '') + ' ' + (input.placeholder || '') + ' ' + (input.className || '')).toLowerCase();
+              if (attrs.includes('otp') || attrs.includes('code') || attrs.includes('pin')) {
+                if (!input.getAttribute('autocomplete')) {
+                  input.setAttribute('autocomplete', 'one-time-code');
+                }
+                if (!input.getAttribute('inputmode')) {
+                  input.setAttribute('inputmode', 'numeric');
+                }
+              }
+            });
+          };
+
+          setupOtpInputs();
+          const observer = new MutationObserver(function() {
+            setupOtpInputs();
+          });
+          observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+          document.addEventListener('click', function(e) {
+            let target = e.target;
+            const btn = (target && target.closest)
+              ? target.closest('button, input[type="submit"], [role="button"], a')
+              : null;
+            if (btn) {
+              const text = (btn.innerText || btn.textContent || btn.value || '').trim().toLowerCase();
+              if (text.includes('otp') || text.includes('send') || text.includes('login') || text.includes('get code') || text.includes('resend')) {
+                if (window.FlutterOTP) {
+                  window.FlutterOTP.postMessage('listen');
+                }
+              }
+            }
+          }, true);
+        }
       })();
     ''');
   }
@@ -456,7 +602,6 @@ class _WebViewPageState extends State<WebViewPage> {
         scheme != 'javascript';
 
     if (isWhatsApp || isNonWebScheme) {
-      
       await _openExternalUrl(url, isWhatsApp: isWhatsApp);
       return true;
     }
