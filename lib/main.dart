@@ -48,7 +48,6 @@ class WebViewPage extends StatefulWidget {
 class _WebViewPageState extends State<WebViewPage> {
   late final WebViewController controller;
   bool isLoading = true;
-
   @override
   void initState() {
     super.initState();
@@ -72,7 +71,6 @@ class _WebViewPageState extends State<WebViewPage> {
             if (await _handleExternalUrl(request.url)) {
               return NavigationDecision.prevent;
             }
-
             if (request.url.endsWith(".pdf") ||
                 request.url.endsWith(".jpg") ||
                 request.url.endsWith(".png") ||
@@ -80,7 +78,6 @@ class _WebViewPageState extends State<WebViewPage> {
               await downloadFile(request.url);
               return NavigationDecision.prevent;
             }
-
             return NavigationDecision.navigate;
           },
           onPageStarted: (url) {
@@ -122,7 +119,6 @@ class _WebViewPageState extends State<WebViewPage> {
       (controller.platform as WebKitWebViewController)
           .setAllowsBackForwardNavigationGestures(true);
     }
-
     _loadInitialUrl();
     Future.delayed(const Duration(seconds: 5), () {
       if (mounted && isLoading) {
@@ -248,7 +244,6 @@ class _WebViewPageState extends State<WebViewPage> {
       String shareUrl = '';
       String shareTitle = '';
       String shareText = '';
-
       if (messageText.startsWith('{') && messageText.endsWith('}')) {
         final Map<String, dynamic> data = jsonDecode(messageText);
         shareUrl = data['url']?.toString() ?? '';
@@ -414,21 +409,20 @@ class _WebViewPageState extends State<WebViewPage> {
         if (!window[handlerId]) {
           window[handlerId] = true;
           document.addEventListener('click', function(e) {
-            let el = e.target;
-            while (el && el !== document.body) {
-              const href = el.getAttribute ? (el.getAttribute('href') || '') : '';
-              const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-
+            let target = e.target;
+            const btn = (target && target.closest)
+              ? target.closest('a, button, [role="button"], .whatsapp-btn, [data-action*="whatsapp" i]')
+              : null;
+            if (btn) {
+              const href = btn.getAttribute ? (btn.getAttribute('href') || '') : '';
               if (href.includes('wa.me') || href.includes('whatsapp') || href.startsWith('whatsapp:') || href.startsWith('tel:') || href.startsWith('mailto:')) {
                 return;
               }
-
-              if (text.includes('chat on whatsapp') || (text.includes('whatsapp') && (text.includes('98300') || text.includes('support')))) {
+              const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+              if (text.length < 80 && (text === 'chat on whatsapp' || text.includes('chat on whatsapp'))) {
                 window.location.href = 'https://wa.me/919830055527';
                 e.preventDefault();
-                break;
               }
-              el = el.parentElement;
             }
           }, true);
         }
@@ -462,6 +456,7 @@ class _WebViewPageState extends State<WebViewPage> {
         scheme != 'javascript';
 
     if (isWhatsApp || isNonWebScheme) {
+      
       await _openExternalUrl(url, isWhatsApp: isWhatsApp);
       return true;
     }
