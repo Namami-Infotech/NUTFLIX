@@ -10,10 +10,10 @@ import 'package:share_plus/share_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
-
 import 'package:url_launcher/url_launcher.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:sms_autofill/sms_autofill.dart';
+import 'package:image_picker/image_picker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,9 +34,19 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: WebViewPage(),
+      themeMode: ThemeMode.light,
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color(0xFFEEE9E3),
+        canvasColor: const Color(0xFFEEE9E3),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFEEE9E3),
+          surface: const Color(0xFFEEE9E3),
+          brightness: Brightness.light,
+        ),
+      ),
+      home: const WebViewPage(),
     );
   }
 }
@@ -157,19 +167,218 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
   }
 
   Future<List<String>> _androidFilePicker(FileSelectorParams params) async {
-    final bool allowMultiple = params.mode == FileSelectorMode.openMultiple;
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      allowMultiple: allowMultiple,
-      type: FileType.any,
-    );
-    if (result != null && result.files.isNotEmpty) {
-      return result.files
-          .where((file) => file.path != null && file.path!.isNotEmpty)
-          .map((file) => Uri.file(file.path!).toString())
-          .toList();
-    }
+    if (!mounted) return [];
 
+    try {
+      final String? selectedSource = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (BuildContext sheetContext) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.only(
+              top: 12,
+              left: 20,
+              right: 20,
+              bottom: MediaQuery.of(sheetContext).padding.bottom + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Upload Image / Proof',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF222222),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Choose Camera to take photo or Gallery to select',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildPickerOption(
+                        icon: Icons.camera_alt_rounded,
+                        label: 'Camera',
+                        sublabel: 'Take Photo',
+                        iconBgColor: const Color(0xFFE8F5E9),
+                        iconColor: const Color(0xFF2E7D32),
+                        onTap: () => Navigator.of(sheetContext).pop('camera'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildPickerOption(
+                        icon: Icons.photo_library_rounded,
+                        label: 'Gallery',
+                        sublabel: 'Choose Image',
+                        iconBgColor: const Color(0xFFFFF3E0),
+                        iconColor: const Color(0xFFE65100),
+                        onTap: () => Navigator.of(sheetContext).pop('gallery'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildPickerOption(
+                        icon: Icons.folder_open_rounded,
+                        label: 'Files',
+                        sublabel: 'Browse Device',
+                        iconBgColor: const Color(0xFFE3F2FD),
+                        iconColor: const Color(0xFF1565C0),
+                        onTap: () => Navigator.of(sheetContext).pop('files'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade700,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () => Navigator.of(sheetContext).pop(null),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (selectedSource == null) {
+        return [];
+      }
+
+      final bool allowMultiple = params.mode == FileSelectorMode.openMultiple;
+      final ImagePicker picker = ImagePicker();
+
+      if (selectedSource == 'camera') {
+        final XFile? photo = await picker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 85,
+        );
+        if (photo != null && photo.path.isNotEmpty) {
+          return [Uri.file(photo.path).toString()];
+        }
+        return [];
+      } else if (selectedSource == 'gallery') {
+        if (allowMultiple) {
+          final List<XFile> images = await picker.pickMultiImage(
+            imageQuality: 85,
+          );
+          return images
+              .where((file) => file.path.isNotEmpty)
+              .map((file) => Uri.file(file.path).toString())
+              .toList();
+        } else {
+          final XFile? image = await picker.pickImage(
+            source: ImageSource.gallery,
+            imageQuality: 85,
+          );
+          if (image != null && image.path.isNotEmpty) {
+            return [Uri.file(image.path).toString()];
+          }
+          return [];
+        }
+      } else if (selectedSource == 'files') {
+        final FilePickerResult? result = await FilePicker.platform.pickFiles(
+          allowMultiple: allowMultiple,
+          type: FileType.any,
+        );
+        if (result != null && result.files.isNotEmpty) {
+          return result.files
+              .where((file) => file.path != null && file.path!.isNotEmpty)
+              .map((file) => Uri.file(file.path!).toString())
+              .toList();
+        }
+        return [];
+      }
+    } catch (e) {
+      debugPrint("File picker error: $e");
+    }
     return [];
+  }
+
+  Widget _buildPickerOption({
+    required IconData icon,
+    required String label,
+    required String sublabel,
+    required Color iconBgColor,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: iconBgColor,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 26, color: iconColor),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF222222),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              sublabel,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> downloadFile(String url) async {
@@ -193,7 +402,7 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedUrl = prefs.getString('last_url');
-      String urlToLoad = 'https://nutflix-frontend.vercel.app/';
+      String urlToLoad = 'https://www.nut-flix.in/';
       if (savedUrl != null &&
           savedUrl.isNotEmpty &&
           !_isPublicWebsiteUrl(savedUrl)) {
@@ -201,7 +410,7 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
       }
       controller.loadRequest(Uri.parse(urlToLoad));
     } catch (e) {
-      controller.loadRequest(Uri.parse('https://nutflix-frontend.vercel.app/'));
+      controller.loadRequest(Uri.parse('https://www.nut-flix.in/'));
     }
   }
 
@@ -494,19 +703,16 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
             }
           }, true);
         }
-
         // 4. OTP AutoFill Helper & DOM Tagging
         const otpInitId = 'flutter-otp-init-handler';
         if (!window[otpInitId]) {
           window[otpInitId] = true;
-
           window.fillOtpCode = function(otp) {
             if (!otp) return;
             const singleInputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input[autocomplete="one-time-code"]')).filter(function(el) {
               const attrs = ((el.name || '') + ' ' + (el.id || '') + ' ' + (el.placeholder || '') + ' ' + (el.className || '')).toLowerCase();
               return attrs.includes('otp') || attrs.includes('code') || attrs.includes('pin') || el.getAttribute('autocomplete') === 'one-time-code';
             });
-
             if (singleInputs.length > 0) {
               const input = singleInputs[0];
               input.value = otp;
@@ -515,7 +721,6 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
               input.dispatchEvent(new Event('blur', { bubbles: true }));
               return;
             }
-
             const boxInputs = Array.from(document.querySelectorAll('input[maxlength="1"]'));
             if (boxInputs.length >= otp.length) {
               for (let i = 0; i < otp.length; i++) {
@@ -526,7 +731,6 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
               }
               return;
             }
-
             const anyInput = document.querySelector('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
             if (anyInput) {
               anyInput.value = otp;
@@ -535,7 +739,6 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
               anyInput.dispatchEvent(new Event('blur', { bubbles: true }));
             }
           };
-
           const setupOtpInputs = function() {
             const inputs = document.querySelectorAll('input');
             inputs.forEach(function(input) {
@@ -571,8 +774,10 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
               }
             }
           }, true);
+
         }
       })();
+      
     ''');
   }
 
@@ -592,7 +797,6 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
         url.contains('wa.me/') ||
         url.contains('whatsapp.com/') ||
         url.startsWith('whatsapp://');
-
     bool isNonWebScheme =
         scheme.isNotEmpty &&
         scheme != 'http' &&
@@ -600,12 +804,10 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
         scheme != 'about' &&
         scheme != 'data' &&
         scheme != 'javascript';
-
     if (isWhatsApp || isNonWebScheme) {
       await _openExternalUrl(url, isWhatsApp: isWhatsApp);
       return true;
     }
-
     return false;
   }
 
@@ -684,20 +886,17 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
         }
         return;
       }
-
       bool launched = false;
       try {
         if (await canLaunchUrl(uri)) {
           launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
       } catch (_) {}
-
       if (!launched) {
         try {
           launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
         } catch (_) {}
       }
-
       if (!launched && isWhatsApp) {
         final phoneMatch = RegExp(r'\d{10,15}').firstMatch(url);
         if (phoneMatch != null) {
