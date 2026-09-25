@@ -402,15 +402,16 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedUrl = prefs.getString('last_url');
-      String urlToLoad = 'https://www.nut-flix.in/';
+      String urlToLoad = 'https://www.nutclick.in/';
       if (savedUrl != null &&
           savedUrl.isNotEmpty &&
+          savedUrl.contains('nutclick.in') &&
           !_isPublicWebsiteUrl(savedUrl)) {
         urlToLoad = savedUrl;
       }
       controller.loadRequest(Uri.parse(urlToLoad));
     } catch (e) {
-      controller.loadRequest(Uri.parse('https://www.nut-flix.in/'));
+      controller.loadRequest(Uri.parse('https://www.nutclick.in/'));
     }
   }
 
@@ -432,7 +433,9 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
     if (url == null || url.isEmpty) return false;
     final uri = Uri.tryParse(url);
     if (uri == null) return false;
-    if (!uri.host.contains('nutflix-frontend.vercel.app')) return false;
+    if (!uri.host.contains('nutclick.in')) {
+      return false;
+    }
     final path = uri.path.toLowerCase().trim();
     final cleanPath = path.replaceAll(RegExp(r'/+$'), '');
     if (cleanPath.isEmpty ||
@@ -507,7 +510,7 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
       // ignore: deprecated_member_use
       Share.share(
         finalShareText,
-        subject: shareTitle.isNotEmpty ? shareTitle : 'Nutflix',
+        subject: shareTitle.isNotEmpty ? shareTitle : 'Nutclick',
       );
     } catch (e) {
       debugPrint('Error handling share: $e');
@@ -646,7 +649,7 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
                 if (window.FlutterShare) {
                   window.FlutterShare.postMessage(JSON.stringify({
                     url: text,
-                    title: document.title || 'Nutflix',
+                    title: document.title || 'Nutclick',
                     text: text
                   }));
                 }
@@ -670,12 +673,12 @@ class _WebViewPageState extends State<WebViewPage> with CodeAutoFill {
               e.stopPropagation();
               e.stopImmediatePropagation();
               const currentUrl = window.location.href;
-              const pageTitle = document.title || 'Nutflix';
+              const pageTitle = document.title || 'Nutclick';
               if (window.FlutterShare) {
                 window.FlutterShare.postMessage(JSON.stringify({
                   url: currentUrl,
                   title: pageTitle,
-                  text: 'Check out ' + pageTitle + ' on Nutflix!'
+                  text: 'Check out ' + pageTitle + ' on Nutclick!'
                 }));
               }
             }
